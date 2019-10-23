@@ -939,24 +939,28 @@ void loop()
   float accel_angle_x = atan(accel_y/sqrt(pow(accel_x,2) + pow(accel_z,2)))*RADIANS_TO_DEGREES;
   float accel_angle_z = 0;
 
-  //accel_x = accel_x - base_x_accel;
-  //accel_y = accel_y - base_y_accel;
-  //accel_z = accel_z - base_z_accel;
+  accel_x = accel_x - base_x_accel;
+  accel_y = accel_y - base_y_accel;
+  accel_z = accel_z - base_z_accel;
 
   accel_x = accel_x/G_CONVERT * 9.8;//meters per second^2
   accel_y = accel_y/G_CONVERT * 9.8;//meters per second^2
   accel_z = accel_z/G_CONVERT * 9.8;//meters per second^2
 
   float dt =(t_now - get_last_time())/1000.0;
-  //first X integration:
-  float velocity_x = last_velocity_x + (last_accel_x + ((accel_x - last_accel_x)>>1))*dt;
+ /* //first X integration:
+  float velocity_x = last_velocity_x + (last_accel_x + ((accel_x - last_accel_x)/2))*dt;
  //second X integration:
-  float position_x = last_position_x + (last_velocity_x + ((velocity_x - last_velocity_x)>>1))*dt;
+  float position_x = last_position_x + (last_velocity_x + ((velocity_x - last_velocity_x)/2))*dt;
  //first Y integration:
-  float velocity_y = last_velocity_y + (last_accel_y + ((accel_y - last_accel_y)>>1))*dt;
+  float velocity_y = last_velocity_y + (last_accel_y + ((accel_y - last_accel_y)/2))*dt;
  //second Y integration:
-  float position_y = last_position_y + (last_velocity_y + ((velocity_y - last_velocity_y)))*dt;
-  
+  float position_y = last_position_y + (last_velocity_y + ((velocity_y - last_velocity_y)/2))*dt;
+ //first Z integration:
+  float velocity_z = last_velocity_z + (last_accel_z + ((accel_z - last_accel_z)/2))*dt;
+ //second Z integration:
+  float position_z = last_position_z + (last_velocity_z + ((velocity_z - last_velocity_z)/2))*dt;
+*/  
   // Compute the (filtered) gyro angles
   float gyro_angle_x = gyro_x*dt + get_last_x_angle();
   float gyro_angle_y = gyro_y*dt + get_last_y_angle();
@@ -975,11 +979,11 @@ void loop()
   float angle_z = gyro_angle_z;  //Accelerometer doesn't give z-angle
   
   // Update the saved data with the latest values
-  set_last_read_angle_data(t_now, angle_x, angle_y, angle_z,\
-   unfiltered_gyro_angle_x, unfiltered_gyro_angle_y, unfiltered_gyro_angle_z\
-   accel_x, accel_y, accel_z\
-   velocity_x, velocity_y, velocity_z,\
-   position_x, position_y, position_z);
+  set_last_read_angle_data(t_now, angle_x, angle_y, angle_z\
+   ,unfiltered_gyro_angle_x, unfiltered_gyro_angle_y, unfiltered_gyro_angle_z,0,0,0,0,0,0,0,0,0\
+  );// ,accel_x, accel_y, accel_z\
+  // ,velocity_x, velocity_y, velocity_z\
+  // ,position_x, position_y, position_z);
   
   // Send the data to the serial port
   Serial.print(F("DEL:"));              //Delta T
@@ -1002,7 +1006,20 @@ void loop()
   Serial.print(angle_y, 2);
   Serial.print(F(","));
   Serial.print(angle_z, 2);
+  Serial.print(F("#ACD:"));             //accelaration
+  Serial.print(accel_x, 2);
+  Serial.print(F(","));
+  Serial.print(accel_y, 2);
+  Serial.print(F(","));
+  Serial.print(accel_z, 2);
   Serial.println(F(""));
+ /* Serial.print(F("#POS:"));             //Displacement
+  Serial.print(position_x, 2);
+  Serial.print(F(","));
+  Serial.print(position_y, 2);
+  Serial.print(F(","));
+  Serial.print(position_z, 2);
+  Serial.println(F(""));*/
   
   // Delay so we don't swamp the serial port
   delay(5);
