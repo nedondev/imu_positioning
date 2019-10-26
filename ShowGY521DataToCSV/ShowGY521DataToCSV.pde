@@ -12,7 +12,7 @@
 import processing.serial.*;
 
 Serial  myPort;
-short   portIndex = 1;
+short   portIndex = 32;
 int     lf = 10;       //ASCII linefeed
 String  inString;      //String for testing serial communication
 int     calibrating;
@@ -28,6 +28,7 @@ float   x_ac, y_ac, z_ac; //Accel none angular
 float   x_fil;  //Filtered data
 float   y_fil;
 float   z_fil;
+int phase; //which section data  from regression -> 0 loop ->1
 Table table;
 
 void initRow(){
@@ -47,7 +48,7 @@ void initRow(){
 
 void saveRow(float dt, float accel_x, float accel_y, float accel_z
   , float accel_angle_x, float accel_angle_y, float accel_angle_z
-  , float angle_x, float angle_y, float angle_z){
+  , float angle_x, float angle_y, float angle_z, int phase){
   TableRow newRow = table.addRow();
   newRow.setInt("id", table.getRowCount() - 1);
   newRow.setFloat("dt", dt);
@@ -60,8 +61,9 @@ void saveRow(float dt, float accel_x, float accel_y, float accel_z
   newRow.setFloat("angle_x", angle_x);
   newRow.setFloat("angle_y", angle_y);
   newRow.setFloat("angle_z", angle_z);
+  newRow.setFloat("phase", phase);
 
-  saveTable(table, "test.csv");
+  saveTable(table, "./tempDataset/testRegression.csv");
 }
 
 void setup() {
@@ -275,11 +277,15 @@ void serialEvent(Serial p) {
         x_ac = float(data[0]);
         y_ac = float(data[1]);
         z_ac = float(data[2]);
+      } else if (type.equals("REAL")) {
+        phase =1; 
+      }else if (type.equals("TRAN")) {
+        phase =0;
       }
     }
     saveRow(dt, x_ac, y_ac, z_ac
             , x_acc, y_acc, z_acc
-            , x_fil, y_fil, z_fil);
+            , x_fil, y_fil, z_fil, phase);
   } 
   catch (Exception e) {
     println("Caught Exception");

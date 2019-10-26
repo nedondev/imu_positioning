@@ -724,6 +724,11 @@ float    base_x_gyro;
 float    base_y_gyro;
 float    base_z_gyro;
 
+float regress_accelx_alpha;
+float regress_accelx_beta;
+float regress_accely_alpha;
+float regress_accely_beta;
+
 int read_gyro_accel_vals(uint8_t* accel_t_gyro_ptr) {
   // Read the raw values.
   // Read 14 bytes at once, 
@@ -800,7 +805,170 @@ void calibrate_sensors() {
   //Serial.println("Finishing Calibration");
 }
 
+#define REGRESSION_NUM 10
+void set_regression_ab(float *alpha, float *beta, float *angle, float *accel){
+  float mean_angle;
+  float mean_accel;
+  int8_t i;
+  for (i = 0; i < REGRESSION_NUM*3; i++){
+    mean_angle += angle[i];
+    mean_accel += accel[i];
+  }
+  mean_angle /= i;
+  mean_accel /= i;
+  float numerator[REGRESSION_NUM*3 +1];
+  float denominator[REGRESSION_NUM*3 +1];
 
+  for (i = 0; i < REGRESSION_NUM*3; i++){
+    numerator[i] = (angle[i] - mean_angle) * (accel[i] - mean_accel);
+    numerator[REGRESSION_NUM*3] = numerator[i];
+    denominator[i] = pow(angle[i] - mean_angle,2);
+    denominator[REGRESSION_NUM*3] = denominator[i];
+  }
+  *beta = numerator[REGRESSION_NUM*3] / denominator[REGRESSION_NUM*3];
+  *alpha = mean_accel - (*beta * mean_angle);
+
+}
+
+void find_linear_regression() {
+  int8_t negative_angle_x = 0;
+  int8_t positive_angle_x = 0;
+  int8_t negative_angle_y = 0;
+  int8_t positive_angle_y = 0;
+  int8_t based_angle = 0;
+  float accel_x_data[REGRESSION_NUM*3];
+  float accel_y_data[REGRESSION_NUM*3];
+  float angle_x_data[REGRESSION_NUM*3];
+  float angle_y_data[REGRESSION_NUM*3];
+  accel_t_gyro_union    accel_t_gyro;
+  Serial.println("Start regression");
+  while(negative_angle_x < REGRESSION_NUM || positive_angle_x < REGRESSION_NUM \
+    || negative_angle_y < REGRESSION_NUM || positive_angle_y < REGRESSION_NUM \
+    || based_angle < REGRESSION_NUM){
+
+      unsigned long t_now = millis();
+
+      read_gyro_accel_vals((uint8_t*) &accel_t_gyro);
+      
+      float FS_SEL = 131;
+      float gyro_x = (accel_t_gyro.value.x_gyro - base_x_gyro)/FS_SEL;
+      float gyro_y = (accel_t_gyro.value.y_gyro - base_y_gyro)/FS_SEL;
+      float gyro_z = (accel_t_gyro.value.z_gyro - base_z_gyro)/FS_SEL;
+      
+      float accel_x = accel_t_gyro.value.x_accel;
+      float accel_y = accel_t_gyro.value.y_accel;
+      float accel_z = accel_t_gyro.value.z_accel;
+      
+      // Get angle values from accelerometer
+      float RADIANS_TO_DEGREES = 180/3.14159;
+    //  float accel_vector_length = sqrt(pow(accel_x,2) + pow(accel_y,2) + pow(accel_z,2));
+      float accel_angle_y = atan(-1*accel_x/sqrt(pow(accel_y,2) + pow(accel_z,2)))*RADIANS_TO_DEGREES;
+      float accel_angle_x = atan(accel_y/sqrt(pow(accel_x,2) + pow(accel_z,2)))*RADIANS_TO_DEGREES;
+      float accel_angle_z = 0;
+
+      float dt =(t_now - get_last_time())/1000.0;
+      // Compute the (filtered) gyro angles
+      float gyro_angle_x = gyro_x*dt + get_last_x_angle();
+      float gyro_angle_y = gyro_y*dt + get_last_y_angle();
+      float gyro_angle_z = gyro_z*dt + get_last_z_angle();
+      
+      // Compute the drifting gyro angles
+      float unfiltered_gyro_angle_x = gyro_x*dt + get_last_gyro_x_angle();
+      float unfiltered_gyro_angle_y = gyro_y*dt + get_last_gyro_y_angle();
+      float unfiltered_gyro_angle_z = gyro_z*dt + get_last_gyro_z_angle();
+      
+      // Apply the complementary filter to figure out the change in angle - choice of alpha is
+      // estimated now.  Alpha depends on the sampling rate...
+      float alpha = 0.96;
+      float angle_x = alpha*gyro_angle_x + (1.0 - alpha)*accel_angle_x;
+      float angle_y = alpha*gyro_angle_y + (1.0 - alpha)*accel_angle_y;
+      float angle_z = gyro_angle_z;  //Accelerometer doesn't give z-angle
+
+      // Update the saved data with the latest values
+      set_last_read_angle_data(t_now, angle_x, angle_y, angle_z\
+      ,unfiltered_gyro_angle_x, unfiltered_gyro_angle_y, unfiltered_gyro_angle_z,0,0,0,0,0,0,0,0,0\
+      );
+      if(angle_x < -50){
+        if(negative_angle_x < 10){
+          angle_x_data[negative_angle_x + positive_angle_x + based_angle] = angle_x;
+          accel_y_data[negative_angle_x + positive_angle_x + based_angle] = accel_y;
+          negative_angle_x++;
+          delay(50);
+        }
+      }
+      else if(angle_x > 50){
+        if(positive_angle_x < 10){
+          angle_x_data[negative_angle_x + positive_angle_x + based_angle] = angle_x;
+          accel_y_data[negative_angle_x + positive_angle_x + based_angle] = accel_y;
+          positive_angle_x++;
+          delay(50);
+        }
+
+      }
+      if(angle_y < -50){
+        if(negative_angle_y < 10){
+          angle_y_data[negative_angle_y + positive_angle_y + based_angle] = angle_y;
+          accel_x_data[negative_angle_y + positive_angle_y + based_angle] = accel_x;
+          negative_angle_y++;
+          delay(50);
+        }
+      }
+      else if(angle_y > 50){
+        if(positive_angle_y < 10){
+          angle_y_data[negative_angle_y + positive_angle_y + based_angle] = angle_y;
+          accel_x_data[negative_angle_y + positive_angle_y + based_angle] = accel_x;
+          positive_angle_y++;
+          delay(50);
+        }
+      }
+      else{
+        if(based_angle < 10){
+          angle_y_data[negative_angle_y + positive_angle_y + based_angle] = angle_y;
+          accel_y_data[negative_angle_y + positive_angle_y + based_angle] = accel_y;
+          angle_x_data[negative_angle_y + positive_angle_y + based_angle] = angle_x;
+          accel_x_data[negative_angle_y + positive_angle_y + based_angle] = accel_x;
+          based_angle++;
+          delay(50);
+        }
+      }
+      // Send the data to the serial port
+      Serial.print(F("DEL:"));              //Delta T
+      Serial.print(dt, DEC);
+      Serial.print(F("#ACC:"));              //Accelerometer angle
+      Serial.print(accel_angle_x, 2);
+      Serial.print(F(","));
+      Serial.print(accel_angle_y, 2);
+      Serial.print(F(","));
+      Serial.print(accel_angle_z, 2);
+      Serial.print(F("#GYR:"));
+      Serial.print(unfiltered_gyro_angle_x, 2);        //Gyroscope angle
+      Serial.print(F(","));
+      Serial.print(unfiltered_gyro_angle_y, 2);
+      Serial.print(F(","));
+      Serial.print(unfiltered_gyro_angle_z, 2);
+      Serial.print(F("#FIL:"));             //Filtered angle
+      Serial.print(angle_x, 2);
+      Serial.print(F(","));
+      Serial.print(angle_y, 2);
+      Serial.print(F(","));
+      Serial.print(angle_z, 2);
+      Serial.print(F("#ACD:"));             //accelaration
+      Serial.print(accel_x, 2);
+      Serial.print(F(","));
+      Serial.print(accel_y, 2);
+      Serial.print(F(","));
+      Serial.print(accel_z, 2);
+      Serial.print(F("#TRAN"));
+      Serial.println(F(""));
+    }
+  float *x_plt = angle_y_data;
+  float *y_plt = accel_x_data;
+  set_regression_ab(&regress_accelx_alpha, &regress_accelx_beta, x_plt, y_plt);
+  x_plt = angle_x_data;
+  y_plt = accel_y_data;
+  set_regression_ab(&regress_accely_alpha, &regress_accely_beta, x_plt, y_plt);
+  Serial.println("Finish regression");
+}
 void setup()
 {      
   int error;
@@ -854,6 +1022,7 @@ void setup()
    0, 0, 0,\
    0, 0, 0,\
    0, 0, 0);
+  find_linear_regression();
 }
 
 
@@ -939,13 +1108,13 @@ void loop()
   float accel_angle_x = atan(accel_y/sqrt(pow(accel_x,2) + pow(accel_z,2)))*RADIANS_TO_DEGREES;
   float accel_angle_z = 0;
 
-  accel_x = accel_x - base_x_accel;
-  accel_y = accel_y - base_y_accel;
-  accel_z = accel_z - base_z_accel;
+  //accel_x = accel_x - base_x_accel;
+  //accel_y = accel_y - base_y_accel;
+  //accel_z = accel_z - base_z_accel;
 
-  accel_x = accel_x/G_CONVERT * 9.8;//meters per second^2
-  accel_y = accel_y/G_CONVERT * 9.8;//meters per second^2
-  accel_z = accel_z/G_CONVERT * 9.8;//meters per second^2
+  //accel_x = accel_x/G_CONVERT * 9.8;//meters per second^2
+  //accel_y = accel_y/G_CONVERT * 9.8;//meters per second^2
+  //accel_z = accel_z/G_CONVERT * 9.8;//meters per second^2
 
   float dt =(t_now - get_last_time())/1000.0;
  /* //first X integration:
@@ -977,6 +1146,11 @@ void loop()
   float angle_x = alpha*gyro_angle_x + (1.0 - alpha)*accel_angle_x;
   float angle_y = alpha*gyro_angle_y + (1.0 - alpha)*accel_angle_y;
   float angle_z = gyro_angle_z;  //Accelerometer doesn't give z-angle
+
+  base_y_accel = regress_accely_alpha + regress_accely_beta * angle_x;
+  base_x_accel = regress_accelx_alpha + regress_accelx_beta * angle_y;
+  //accel_x = accel_x - base_x_accel;
+  //accel_y = accel_y - base_y_accel;
   
   // Update the saved data with the latest values
   set_last_read_angle_data(t_now, angle_x, angle_y, angle_z\
@@ -1012,6 +1186,7 @@ void loop()
   Serial.print(accel_y, 2);
   Serial.print(F(","));
   Serial.print(accel_z, 2);
+  Serial.print(F("#REAL"));
   Serial.println(F(""));
  /* Serial.print(F("#POS:"));             //Displacement
   Serial.print(position_x, 2);
