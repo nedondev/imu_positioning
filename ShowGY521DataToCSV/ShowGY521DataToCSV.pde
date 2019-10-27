@@ -44,11 +44,12 @@ void initRow(){
   table.addColumn("angle_x");
   table.addColumn("angle_y");
   table.addColumn("angle_z");
+  table.addColumn("phase");
 }
 
 void saveRow(float dt, float accel_x, float accel_y, float accel_z
   , float accel_angle_x, float accel_angle_y, float accel_angle_z
-  , float angle_x, float angle_y, float angle_z, int phase){
+  , float angle_x, float angle_y, float angle_z, int phase, String fileName){
   TableRow newRow = table.addRow();
   newRow.setInt("id", table.getRowCount() - 1);
   newRow.setFloat("dt", dt);
@@ -61,9 +62,9 @@ void saveRow(float dt, float accel_x, float accel_y, float accel_z
   newRow.setFloat("angle_x", angle_x);
   newRow.setFloat("angle_y", angle_y);
   newRow.setFloat("angle_z", angle_z);
-  newRow.setFloat("phase", phase);
+  newRow.setInt("phase", phase);
 
-  saveTable(table, "./tempDataset/testRegression.csv");
+  saveTable(table, fileName);
 }
 
 void setup() {
@@ -285,9 +286,11 @@ void serialEvent(Serial p) {
     }
     saveRow(dt, x_ac, y_ac, z_ac
             , x_acc, y_acc, z_acc
-            , x_fil, y_fil, z_fil, phase);
+            , x_fil, y_fil, z_fil, phase, "tempDataset/testRegression.csv");
   } 
   catch (Exception e) {
-    println("Caught Exception");
+    print("Caught Exception:");
+    println(e);
+    
   }
 }
